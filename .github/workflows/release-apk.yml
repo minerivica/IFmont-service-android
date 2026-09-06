@@ -32,8 +32,8 @@ jobs:
           IFMONT_KEY_PASSWORD: ${{ secrets.IFMONT_KEY_PASSWORD }}
         run: |
           gradle :app:assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk IFmont-Servis-v10.5.apk
+          cp app/build/outputs/apk/release/app-release.apk IFmont-Servis-v10.6.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: IFmont-Servis-v10.5
-          path: IFmont-Servis-v10.5.apk
+          name: IFmont-Servis-v10.6
+          path: IFmont-Servis-v10.6.apk
