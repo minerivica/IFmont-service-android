@@ -1,0 +1,22 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'hr.ifmont.servis'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'hr.ifmont.servis'
+        minSdk 29
+        targetSdk 35
+        versionCode 103
+        versionName '10.3-apk'
+    }
+
+    buildTypes {
+        debug { debuggable true }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
