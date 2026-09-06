@@ -9,13 +9,23 @@ android {
         minSdk 29
         targetSdk 35
         versionCode 103
-        versionName '10.3-apk'
+        versionName '10.3'
+    }
+
+    signingConfigs {
+        release {
+            storeFile rootProject.file('ifmont-release.jks')
+            storePassword System.getenv('IFMONT_KEYSTORE_PASSWORD')
+            keyAlias System.getenv('IFMONT_KEY_ALIAS')
+            keyPassword System.getenv('IFMONT_KEY_PASSWORD')
+        }
     }
 
     buildTypes {
         debug { debuggable true }
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
