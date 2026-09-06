@@ -23,7 +23,6 @@ jobs:
         run: |
           base64 -d app/src/main/assets/index.html.gz.b64 | gunzip > app/src/main/assets/index.html
           base64 -d app/src/main/assets/ifmont-logo.jpg.b64 > app/src/main/assets/ifmont-logo.jpg
-          base64 -d app/src/main/res/drawable/ic_launcher.png.b64 > app/src/main/res/drawable/ic_launcher.png
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
