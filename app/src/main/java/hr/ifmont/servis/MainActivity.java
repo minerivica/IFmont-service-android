@@ -174,23 +174,29 @@ public class MainActivity extends Activity {
     }
 
     private void showDrivePicker() {
+        // Do not combine setMessage() and setItems() here. On Android AlertDialog,
+        // the message view can hide the list, which made v10.7 look like a dead-end popup.
         new AlertDialog.Builder(this)
             .setTitle("Google Drive sinkronizacija")
-            .setMessage("Na prvom uređaju napravi novu IFmont sinkronizacijsku datoteku. Na drugom uređaju odaberi tu istu postojeću datoteku s Google Drivea.")
-            .setItems(new String[]{"Odaberi postojeću IFmont-AUTO-SYNC.json", "Napravi novu IFmont-AUTO-SYNC.json", "Odustani"}, (dialog, which) -> {
+            .setItems(new String[]{
+                "PRVI UREĐAJ — napravi novu IFmont-AUTO-SYNC.json",
+                "DRUGI UREĐAJ — odaberi postojeću IFmont-AUTO-SYNC.json",
+                "Odustani"
+            }, (dialog, which) -> {
                 if (which == 0) {
-                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                    intent.addCategory(Intent.CATEGORY_OPENABLE);
-                    intent.setType("application/json");
-                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-                    startActivityForResult(intent, DRIVE_OPEN_FILE_REQUEST);
-                } else if (which == 1) {
                     Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
                     intent.setType("application/json");
                     intent.putExtra(Intent.EXTRA_TITLE, DRIVE_FILE);
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                     startActivityForResult(intent, DRIVE_CREATE_FILE_REQUEST);
+                } else if (which == 1) {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("*/*");
+                    intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain", "application/octet-stream"});
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    startActivityForResult(intent, DRIVE_OPEN_FILE_REQUEST);
                 }
             })
             .show();
