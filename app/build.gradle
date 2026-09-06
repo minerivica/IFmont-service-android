@@ -8,8 +8,8 @@ android {
         applicationId 'hr.ifmont.servis'
         minSdk 29
         targetSdk 35
-        versionCode 104
-        versionName '10.4'
+        versionCode 105
+        versionName '10.5'
     }
 
     signingConfigs {
