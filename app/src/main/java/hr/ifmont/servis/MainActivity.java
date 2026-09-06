@@ -1,14 +1,13 @@
 package hr.ifmont.servis;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
-import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -29,9 +28,10 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private static final int FILE_CHOOSER_REQUEST = 2001;
-    private static final int DRIVE_TREE_REQUEST = 3001;
+    private static final int DRIVE_OPEN_FILE_REQUEST = 3001;
+    private static final int DRIVE_CREATE_FILE_REQUEST = 3002;
     private static final String PREFS = "ifmont_native";
-    private static final String PREF_DRIVE_TREE = "drive_tree_uri";
+    private static final String PREF_DRIVE_FILE = "drive_file_uri";
     private static final String DRIVE_FILE = "IFmont-AUTO-SYNC.json";
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -74,25 +74,32 @@ public class MainActivity extends Activity {
         return getSharedPreferences(PREFS, MODE_PRIVATE);
     }
 
-    private Uri getDriveTreeUri() {
-        String raw = prefs().getString(PREF_DRIVE_TREE, "");
+    private Uri getDriveFileUri() {
+        String raw = prefs().getString(PREF_DRIVE_FILE, "");
         if (raw == null || raw.isEmpty()) return null;
         try { return Uri.parse(raw); } catch (Exception e) { return null; }
+    }
+
+    private void persistDriveUri(Uri uri, Intent data) {
+        int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+        if (data != null) {
+            flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            if (flags == 0) flags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+        }
+        try { getContentResolver().takePersistableUriPermission(uri, flags); } catch (Exception ignored) {}
+        prefs().edit().putString(PREF_DRIVE_FILE, uri.toString()).apply();
+        Toast.makeText(this, "Google Drive sinkronizacija povezana.", Toast.LENGTH_LONG).show();
+        if (webView != null) {
+            webView.post(() -> webView.evaluateJavascript("window.IFmontDriveFolderSelected&&window.IFmontDriveFolderSelected();", null));
+        }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode == DRIVE_TREE_REQUEST) {
+        if (requestCode == DRIVE_OPEN_FILE_REQUEST || requestCode == DRIVE_CREATE_FILE_REQUEST) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-                Uri uri = data.getData();
-                int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                try { getContentResolver().takePersistableUriPermission(uri, flags); } catch (Exception ignored) {}
-                prefs().edit().putString(PREF_DRIVE_TREE, uri.toString()).apply();
-                Toast.makeText(this, "Google Drive mapa povezana.", Toast.LENGTH_LONG).show();
-                if (webView != null) {
-                    webView.post(() -> webView.evaluateJavascript("window.IFmontDriveFolderSelected&&window.IFmontDriveFolderSelected();", null));
-                }
+                persistDriveUri(data.getData(), data);
             }
             return;
         }
@@ -135,55 +142,29 @@ public class MainActivity extends Activity {
     }
     private static class SavedFile { final Uri uri; final String mime; SavedFile(Uri u,String m){uri=u;mime=m;} }
 
-    private Uri rootDocumentUri(Uri treeUri) {
-        return DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
-    }
-
-    private Uri findChild(Uri treeUri, String displayName) throws Exception {
-        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
-        String[] projection = {DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME};
-        try (Cursor c = getContentResolver().query(children, projection, null, null, null)) {
-            if (c == null) return null;
-            int idCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
-            int nameCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
-            while (c.moveToNext()) {
-                String name = c.getString(nameCol);
-                if (displayName.equals(name)) {
-                    String id = c.getString(idCol);
-                    return DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
-                }
-            }
-        }
-        return null;
-    }
-
-    private void writeDriveText(Uri treeUri, String text) throws Exception {
-        Uri file = findChild(treeUri, DRIVE_FILE);
-        if (file == null) {
-            file = DocumentsContract.createDocument(getContentResolver(), rootDocumentUri(treeUri), "application/json", DRIVE_FILE);
-            if (file == null) throw new Exception("Ne mogu napraviti Drive datoteku");
-        }
+    private void writeDriveText(Uri uri, String text) throws Exception {
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        Exception first = null;
         try {
-            android.os.ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(file, "rwt");
-            if (pfd == null) throw new Exception("Ne mogu otvoriti Drive datoteku");
+            android.os.ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "rwt");
+            if (pfd == null) throw new Exception("Drive datoteka se ne može otvoriti za pisanje");
             try (FileOutputStream out = new FileOutputStream(pfd.getFileDescriptor())) {
                 out.write(bytes);
                 out.flush();
             } finally { pfd.close(); }
-        } catch (Exception first) {
-            try (OutputStream out = getContentResolver().openOutputStream(file, "wt")) {
-                if (out == null) throw first;
-                out.write(bytes);
-            }
+            return;
+        } catch (Exception e) { first = e; }
+
+        try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+            if (out == null) throw first != null ? first : new Exception("Drive datoteka se ne može otvoriti");
+            out.write(bytes);
+            out.flush();
         }
     }
 
-    private String readDriveText(Uri treeUri) throws Exception {
-        Uri file = findChild(treeUri, DRIVE_FILE);
-        if (file == null) return "";
-        try (InputStream in = getContentResolver().openInputStream(file)) {
-            if (in == null) return "";
+    private String readDriveText(Uri uri) throws Exception {
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new Exception("Drive datoteka se ne može otvoriti za čitanje");
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
             int n;
@@ -192,27 +173,46 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showDrivePicker() {
+        new AlertDialog.Builder(this)
+            .setTitle("Google Drive sinkronizacija")
+            .setMessage("Na prvom uređaju napravi novu IFmont sinkronizacijsku datoteku. Na drugom uređaju odaberi tu istu postojeću datoteku s Google Drivea.")
+            .setItems(new String[]{"Odaberi postojeću IFmont-AUTO-SYNC.json", "Napravi novu IFmont-AUTO-SYNC.json", "Odustani"}, (dialog, which) -> {
+                if (which == 0) {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("application/json");
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    startActivityForResult(intent, DRIVE_OPEN_FILE_REQUEST);
+                } else if (which == 1) {
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("application/json");
+                    intent.putExtra(Intent.EXTRA_TITLE, DRIVE_FILE);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    startActivityForResult(intent, DRIVE_CREATE_FILE_REQUEST);
+                }
+            })
+            .show();
+    }
+
     public class AndroidBridge {
         @JavascriptInterface public void saveDataUrl(String filename,String dataUrl){runOnUiThread(()->{try{writeToDownloads(filename,dataUrl);Toast.makeText(MainActivity.this,"Spremljeno u Downloads/IFmont: "+filename,Toast.LENGTH_LONG).show();}catch(Exception e){Toast.makeText(MainActivity.this,"Spremanje nije uspjelo: "+e.getMessage(),Toast.LENGTH_LONG).show();}});}
         @JavascriptInterface public void shareDataUrl(String filename,String dataUrl){runOnUiThread(()->{try{SavedFile f=writeToDownloads(filename,dataUrl);Intent share=new Intent(Intent.ACTION_SEND);share.setType(f.mime);share.putExtra(Intent.EXTRA_STREAM,f.uri);share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(Intent.createChooser(share,"Spremi ili podijeli IFmont datoteku"));}catch(Exception e){Toast.makeText(MainActivity.this,"Dijeljenje nije uspjelo: "+e.getMessage(),Toast.LENGTH_LONG).show();}});}
 
         @JavascriptInterface public boolean hasDriveFolder() {
-            return getDriveTreeUri() != null;
+            return getDriveFileUri() != null;
         }
 
         @JavascriptInterface public void chooseDriveFolder() {
-            runOnUiThread(() -> {
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-                startActivityForResult(intent, DRIVE_TREE_REQUEST);
-            });
+            runOnUiThread(MainActivity.this::showDrivePicker);
         }
 
         @JavascriptInterface public String saveDriveBackup(String json) {
-            Uri tree = getDriveTreeUri();
-            if (tree == null) return "NO_FOLDER";
+            Uri uri = getDriveFileUri();
+            if (uri == null) return "NO_FOLDER";
             try {
-                writeDriveText(tree, json);
+                writeDriveText(uri, json);
                 return "OK";
             } catch (Exception e) {
                 return "ERROR:" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
@@ -220,17 +220,21 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface public String loadDriveBackup() {
-            Uri tree = getDriveTreeUri();
-            if (tree == null) return "__NO_FOLDER__";
+            Uri uri = getDriveFileUri();
+            if (uri == null) return "__NO_FOLDER__";
             try {
-                return readDriveText(tree);
+                return readDriveText(uri);
             } catch (Exception e) {
                 return "__ERROR__:" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             }
         }
 
         @JavascriptInterface public void disconnectDriveFolder() {
-            prefs().edit().remove(PREF_DRIVE_TREE).apply();
+            Uri uri = getDriveFileUri();
+            if (uri != null) {
+                try { getContentResolver().releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Exception ignored) {}
+            }
+            prefs().edit().remove(PREF_DRIVE_FILE).apply();
         }
     }
 }

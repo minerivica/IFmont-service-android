@@ -9,22 +9,29 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: android-actions/setup-android@v3
+
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Restore IFmont assets
         run: |
           base64 -d app/src/main/assets/index.html.gz.b64 | gunzip > app/src/main/assets/index.html
-          base64 -d app/src/main/assets/ifmont-logo.png.b64 > app/src/main/assets/ifmont-logo.png
+          base64 -d app/src/main/assets/ifmont-logo.jpg.b64 > app/src/main/assets/ifmont-logo.jpg
+
       - name: Restore signing key
         run: echo "${{ secrets.IFMONT_KEYSTORE_BASE64 }}" | base64 -d > ifmont-release.jks
+
       - name: Build signed release APK
         env:
           IFMONT_KEYSTORE_PASSWORD: ${{ secrets.IFMONT_KEYSTORE_PASSWORD }}
@@ -32,8 +39,9 @@ jobs:
           IFMONT_KEY_PASSWORD: ${{ secrets.IFMONT_KEY_PASSWORD }}
         run: |
           gradle :app:assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk IFmont-Servis-v10.6.apk
+          cp app/build/outputs/apk/release/app-release.apk IFmont-Servis-v10.7.apk
+
       - uses: actions/upload-artifact@v4
         with:
-          name: IFmont-Servis-v10.6
-          path: IFmont-Servis-v10.6.apk
+          name: IFmont-Servis-v10.7
+          path: IFmont-Servis-v10.7.apk
